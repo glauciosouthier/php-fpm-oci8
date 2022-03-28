@@ -1,0 +1,102 @@
+FROM php:7.2.3-fpm as php7.2-fpm-oci8
+
+ENV APCu_VERSION 5.1.21
+ENV APCuBC_VERSION 1.0.5
+
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    tar \
+    wget  \
+    libfreetype6-dev \
+    libjpeg62-turbo-dev \
+    libmcrypt-dev \
+    build-essential \
+    libaio1 \
+    libpng-dev \
+    libpq-dev \
+    && apt-get install --no-install-recommends -y \
+    zlib1g-dev libicu-dev g++  \
+    && docker-php-ext-install intl mbstring zip  \
+    && apt-get clean \
+    && docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
+    && docker-php-ext-install pdo pdo_pgsql pgsql pdo_mysql \
+    && apt-get install -y nginx
+
+COPY ./docker/oracle/ /usr/local
+WORKDIR /usr/local
+RUN unzip -qu instantclient-basic-linux.x64-12.2.0.1.0.zip \
+&& unzip -qu instantclient-sdk-linux.x64-12.2.0.1.0.zip \
+&& ln -s /usr/local/instantclient_12_2 /usr/local/instantclient \
+&& ln -s /usr/local/instantclient/libclntsh.so.* /usr/local/instantclient/libclntsh.so \
+&& ln -s /usr/local/instantclient/lib* /usr/lib \
+&& ln -s /usr/local/instantclient/libocci.so.* /usr/local/instantclient/libocci.so \
+&& echo /opt/oracle/instantclient_12_2 > /etc/ld.so.conf.d/oracle-instantclient \
+&& docker-php-ext-configure oci8 --with-oci8=instantclient,/usr/local/instantclient \
+&& docker-php-ext-install oci8 \
+&& docker-php-ext-configure pdo_oci --with-pdo-oci=instantclient,/usr/local/instantclient \
+&& docker-php-ext-install pdo_oci
+
+RUN docker-php-ext-configure gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ \
+    && docker-php-ext-install -j$(nproc) gd 
+
+#RUN pecl install apcu-5.1.21 apcu_bc-1.0.5 && docker-php-ext-configure apcu
+# Install APCu
+RUN wget "https://pecl.php.net/get/apcu-${APCu_VERSION}.tgz" -O /tmp/apcu.tar.gz && \
+    mkdir -p /usr/src/php/ext/apcu && \
+    tar xf /tmp/apcu.tar.gz -C /usr/src/php/ext/apcu --strip-components=1 && \
+    docker-php-ext-configure apcu && \
+    docker-php-ext-install -j"$(nproc)" apcu && \
+    rm /tmp/apcu.tar.gz
+
+# Install APCu-BC extension
+RUN wget "https://pecl.php.net/get/apcu_bc-${APCuBC_VERSION}.tgz" -O /tmp/apcu_bc.tar.gz && \
+    mkdir -p /usr/src/php/ext/apcu-bc && \
+    tar xf /tmp/apcu_bc.tar.gz -C /usr/src/php/ext/apcu-bc --strip-components=1 && \
+    docker-php-ext-configure apcu-bc && \
+    docker-php-ext-install -j"$(nproc)" apcu-bc && \
+    rm /tmp/apcu_bc.tar.gz
+
+# Load APCU.ini before APC.ini
+RUN rm /usr/local/etc/php/conf.d/docker-php-ext-apcu.ini && \
+    echo extension=apcu.so > /usr/local/etc/php/conf.d/20-php-ext-apcu.ini
+
+ARG INSTALL_XDEBUG=false
+RUN if [ ${INSTALL_XDEBUG} = true ] ; then \
+    pecl install xdebug \
+    && docker-php-ext-enable xdebug \
+;fi
+
+ARG INSTALL_NODE=false
+RUN if [ ${INSTALL_NODE} = true ] ; then \
+  curl -sL https://deb.nodesource.com/setup_12.x | bash - \
+  && apt-get install -y nodejs \
+;fi
+
+ARG INSTALL_COMPOSER=false
+RUN if [ ${INSTALL_COMPOSER} = true ] ; then \
+  curl -sS https://getcomposer.org/installer \
+  | php -- --install-dir=/usr/local/bin --filename=composer \
+  && git config --global http.sslverify false \
+  && composer install \
+  && composer dump-autoload --optimize \
+  #&& composer run-scripts post-install-cmd \
+;fi
+
+WORKDIR /var/www/html
+COPY --chown=www-data:www-data ./docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY --chown=www-data:www-data ./docker/php-fpm/build/entrypoint.sh /etc/entrypoint.sh
+EXPOSE 8080
+ENTRYPOINT ["/etc/entrypoint.sh"]
+#EXPOSE 9000
+#ENTRYPOINT ["php-fpm"] 
+
+
+
+
+
+
+
+
+
+

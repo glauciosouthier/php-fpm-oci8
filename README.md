@@ -1,9 +1,12 @@
-# PHP-FPM + Oracle OCI8 Extensions
+# PHP-FPM + Oracle OCI8 Extension
 
-This image is based on the official PHP-FPM with the oci8 extensions installed.
+This image is based on the official PHP-FPM with the oci8 extension installed.
 
 ```
-docker pull caffeina/php-fpm-oci8
-```
+docker pull glauciosouthier/php{version}-fpm-oci8
+ex:
+docker pull glauciosouthier/php7.2-fpm-oci8
 
-Caffeina srl (c) 2017 (https://caffeina.com)
+
+to build the image type ./build.sh
+```
